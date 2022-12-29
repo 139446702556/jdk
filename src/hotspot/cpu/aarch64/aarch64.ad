@@ -8094,6 +8094,29 @@ instruct cacheWBPostSync()
 %}
 
 // ============================================================================
+// Reverse Bits Instructions
+
+instruct bits_reverse_int(iRegINoSp dst, iRegIorL2I src) %{
+  match(Set dst (ReverseI src));
+  ins_cost(INSN_COST);
+  format %{ "rbitw  $dst, $src" %}
+  ins_encode %{
+    __ rbitw($dst$$Register, $src$$Register);
+  %}
+  ins_pipe(ialu_reg);
+%}
+
+instruct bits_reverse_long(iRegLNoSp dst, iRegL src) %{
+  match(Set dst (ReverseL src));
+  ins_cost(INSN_COST);
+  format %{ "rbit  $dst, $src" %}
+  ins_encode %{
+    __ rbit($dst$$Register, $src$$Register);
+  %}
+  ins_pipe(ialu_reg);
+%}
+
+// ============================================================================
 // BSWAP Instructions
 
 instruct bytes_reverse_int(iRegINoSp dst, iRegIorL2I src) %{
