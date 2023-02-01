@@ -718,6 +718,8 @@ struct Atomic::CmpxchgImpl<
   T operator()(T exchange_value, T volatile* dest, T compare_value,
                atomic_memory_order order) const {
     // Forward to the platform handler for the size of T.
+    // 此处操作由于涉及到硬件层面，所以会根据不同硬件选用不同的实现
+    // 此处为cas主要实现，通过汇编的方式调用硬件原语的cas指令，变量作为操作数传入指令，其中的lock操作是为了在多处理器的情况下达到内存屏障的效果，使多处理器中的缓存数据达到一致性
     return PlatformCmpxchg<sizeof(T)>()(exchange_value,
                                         dest,
                                         compare_value,

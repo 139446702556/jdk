@@ -1985,12 +1985,15 @@ void os::PlatformEvent::unpark() {
 // is unparking you, so don't wait. And spurious returns are fine, so there
 // is no need to track notifications.
 
+//每个线程都会关联一个Parker对象，其对象维护了三个变量：计数器、互斥量和条件变量
+//用于阻塞线程
 void Parker::park(bool isAbsolute, jlong time) {
 
   // Optional fast-path check:
   // Return immediately if a permit is available.
   // We depend on Atomic::xchg() having full barrier semantics
   // since we are doing a lock-free update to _counter.
+  // 更新计数器值为0，并检查计数器原数是否大于0（及park执行前执行过unpark操作），如大于0则直接返回（不阻塞线程）
   if (Atomic::xchg(0, &_counter) > 0) return;
 
   Thread* thread = Thread::current();
@@ -1999,6 +2002,7 @@ void Parker::park(bool isAbsolute, jlong time) {
 
   // Optional optimization -- avoid state transitions if there's
   // an interrupt pending.
+  // 当前线程如果被中断则直接返回
   if (Thread::is_interrupted(thread, false)) {
     return;
   }
@@ -2022,12 +2026,15 @@ void Parker::park(bool isAbsolute, jlong time) {
 
   // Don't wait if cannot get lock since interference arises from
   // unparking. Also re-check interrupt before trying wait.
+  // 通过互斥量的方式来进行加锁操作
+  // 获取锁失败则直接返回（此时互斥量锁被unpark获取无需等待）
   if (Thread::is_interrupted(thread, false) ||
       pthread_mutex_trylock(_mutex) != 0) {
     return;
   }
 
   int status;
+  // 如果执行中途调用过unpark操作，则重置计数器并释放锁，然后退出方法执行
   if (_counter > 0)  { // no wait needed
     _counter = 0;
     status = pthread_mutex_unlock(_mutex);
@@ -2045,6 +2052,7 @@ void Parker::park(bool isAbsolute, jlong time) {
   assert(_cur_index == -1, "invariant");
   if (time == 0) {
     _cur_index = REL_INDEX; // arbitrary choice when not timed
+    // 在条件变量上阻塞，等待满足指定条件后唤醒，等待时会释放锁，唤醒时重新获取锁
     status = pthread_cond_wait(&_cond[_cur_index], _mutex);
     assert_status(status == 0, status, "cond_timedwait");
   }
@@ -2056,6 +2064,7 @@ void Parker::park(bool isAbsolute, jlong time) {
   }
   _cur_index = -1;
 
+  // 计数器清除为0，并释放锁
   _counter = 0;
   status = pthread_mutex_unlock(_mutex);
   assert_status(status == 0, status, "invariant");
@@ -2069,6 +2078,7 @@ void Parker::park(bool isAbsolute, jlong time) {
   }
 }
 
+// 加锁，修改计数器为1，如线程阻塞则唤醒线程
 void Parker::unpark() {
   int status = pthread_mutex_lock(_mutex);
   assert_status(status == 0, status, "invariant");
@@ -2089,6 +2099,7 @@ void Parker::unpark() {
 
   if (s < 1 && index != -1) {
     // thread is definitely parked
+    // 使用信号量唤醒在条件变量上等待着的线程
     status = pthread_cond_signal(&_cond[index]);
     assert_status(status == 0, status, "invariant");
   }
